@@ -31,7 +31,9 @@
 #include <SPI.h>
 #include <WiFi101.h>
 
-#define USE_MDNS_RESPONDER  0
+#define USE_MDNS_RESPONDER 0
+
+#define MOTOR_PIN 2
 
 #if USE_MDNS_RESPONDER
 #include <WiFiMDNSResponder.h>
@@ -46,7 +48,6 @@
 #ifndef PIN_STATE_LOW
 #define PIN_STATE_LOW LOW
 #endif
-
 
 char mdnsName[] = "wifi101-XXXXXX"; // the MDNS name that the board will respond to
                                     // after WiFi settings have been provisioned.
@@ -67,14 +68,18 @@ MDNS mdns(udp);
 #endif
 
 void printWiFiStatus();
+int readValueFromHTTP(String currentLine);
 
-void setup() {
+    void setup()
+{
   //Initialize serial:
   Serial.begin(9600);
+  while (!Serial) { }; // wait for the serial to be ready
 
   // check for the presence of the shield:
   Serial.print("Configuring WiFi shield/module...\n");
-  if (WiFi.status() == WL_NO_SHIELD) {
+  if (WiFi.status() == WL_NO_SHIELD)
+  {
     Serial.println("WiFi shield not present");
     // don't continue:
     while (true);
@@ -82,6 +87,13 @@ void setup() {
 
   // configure the LED pin for output mode
   pinMode(LED_BUILTIN, OUTPUT);
+
+  // To de-provision previous wifi access points, uncomment the following two
+  // lines and upload the  sketch. Then connect to the wifi of your choice.
+  // After successfull connection, comment out the two lines again and upload
+  // the sketch once again.
+  // Serial.print("Diconnecting from previous Wifi Access Points...\n");
+  // WiFi.disconnect();
 
   Serial.print("Starting in provisioning mode...\n");
   // Start in provisioning mode:
@@ -91,7 +103,8 @@ void setup() {
   //     you can configure an SSID and password by visiting http://wifi101/
   WiFi.beginProvision();
 
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     // wait while not connected
 
     // blink the led to show an unconnected status
@@ -106,7 +119,8 @@ void setup() {
 
   WiFi.macAddress(mac);
   // Replace the XXXXXX in wifi101-XXXXXX with the last 6 digits of the MAC address.
-  if (strcmp(&mdnsName[7], "-XXXXXX") == 0) {
+  if (strcmp(&mdnsName[7], "-XXXXXX") == 0)
+  {
     sprintf(&mdnsName[7], "-%.2X%.2X%.2X", mac[2], mac[1], mac[0]);
   }
 
@@ -116,12 +130,14 @@ void setup() {
   // Setup the MDNS responder to listen to the configured name.
   // NOTE: You _must_ call this _after_ connecting to the WiFi network and
   // being assigned an IP address.
-  if (!mdnsResponder.begin(mdnsName)) {
+  if (!mdnsResponder.begin(mdnsName))
+  {
     Serial.println("Failed to start MDNS responder!");
-    while(1);
+    while (1)
+      ;
   }
 #else
- // Initialize the mDNS library. You can now reach or ping this
+  // Initialize the mDNS library. You can now reach or ping this
   // Arduino via the host name "arduino.local", provided that your operating
   // system is mDNS/Bonjour-enabled (such as MacOS X).
   // Always call this before any other method!
@@ -157,7 +173,8 @@ void setup() {
 
 unsigned long lastPrint = 0;
 
-void loop() {
+void loop()
+{
 #if USE_MDNS_RESPONDER
   // Call the update() function on the MDNS responder every loop iteration to
   // make sure it can detect and respond to name requests.
@@ -167,63 +184,86 @@ void loop() {
 #endif
 
   // print wifi status every 30 seconds
-  unsigned long now = millis();
-  if ((now - lastPrint) > 30000) {
-    lastPrint = now;
-    Serial.println("");
-    printWiFiStatus();
-  }
+  // unsigned long now = millis();
+  // if ((now - lastPrint) > 30000)
+  // {
+  //   lastPrint = now;
+  //   Serial.println("");
+  //   printWiFiStatus();
+  // }
 
   // listen for incoming clients
   WiFiClient client = server.available();
-  if (client) {
+  if (client)
+  {
     Serial.println("new client");
     // an http request ends with a blank line
     String currentLine = "";
-    while (client.connected()) {
-      if (client.available()) {
+    while (client.connected())
+    {
+      if (client.available())
+      {
         char c = client.read();
+        #ifdef DEBUG_HTTP
         Serial.write(c);
+        #endif
         // if you've gotten to the end of the line (received a newline
         // character) and the line is blank, the http request has ended,
         // so you can send a reply
-        if (c == '\n') {
-          if (currentLine.length() == 0) {
+        if (c == '\n')
+        {
+          // Send the actual repsonse body to the remoter client
+          if (currentLine.length() == 0)
+          {
             // if the current line is blank, you got two newline characters in a row.
             // that's the end of the client HTTP request, so send a response:
 
             // send a standard http response header
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html");
-            client.println("Connection: close");  // the connection will be closed after completion of the response
-            client.println("Refresh: 5");  // refresh the page automatically every 5 sec
+            client.println("Connection: close"); // the connection will be closed after completion of the response
+            client.println("Refresh: 5");        // refresh the page automatically every 5 sec
             client.println();
+            #ifndef SEND_HTTP_RESPONSE
+            client.println();
+            #else
             client.println("<!DOCTYPE HTML>");
-            client.println("<html>");
-
-            // the content of the HTTP response follows the header:
+            client.println("<html><body>");
             client.print("Click <a href=\"/H\">here</a> to turn the LED on<br>");
             client.print("Click <a href=\"/L\">here</a> to turn the LED off<br>");
-
-            client.println("</html>");
+            client.println("</body></html>");
+            #endif
             // break out of the while loop:
             break;
-          } else {
+          }
+          // Reset the currentLine buffer to an empty state
+          else
+          {
             currentLine = "";
           }
         }
-        else if (c != '\r') {
+        // Buffer the incoming bytes into the string
+        else if (c != '\r')
+        {
           currentLine += c;
         }
 
         // Check to see if the client request was "GET /H" or "GET /L":
-        if (currentLine.endsWith("GET /H")) {
-          digitalWrite(LED_BUILTIN, PIN_STATE_HIGH);  // GET /H turns the LED on
+        if (currentLine.endsWith("GET /H"))
+        {
+          digitalWrite(LED_BUILTIN, PIN_STATE_HIGH); // GET /H turns the LED on
         }
-        if (currentLine.endsWith("GET /L")) {
-          digitalWrite(LED_BUILTIN, PIN_STATE_LOW);  // GET /L turns the LED off
+        if (currentLine.endsWith("GET /L"))
+        {
+          digitalWrite(LED_BUILTIN, PIN_STATE_LOW); // GET /L turns the LED off
         }
-
+        // Check if we have a HTTP request line
+        int value = readValueFromHTTP(currentLine);
+        if (value >= 0) {
+          value = constrain(value, 0, 255);
+          Serial.println("Setting PWM Pin " + String(MOTOR_PIN) + " to " + value);
+          analogWrite(MOTOR_PIN, value);
+        }
       }
     }
     // give the web browser time to receive the data
@@ -235,7 +275,27 @@ void loop() {
   }
 }
 
-void printWiFiStatus() {
+// Returns the value from the request
+int readValueFromHTTP(String currentLine) {
+  if (currentLine.endsWith(" HTTP/"))
+  {
+    int start = currentLine.indexOf('V') + 1;
+    int end = currentLine.lastIndexOf(' ');
+    String stringValue = start > 0 ? currentLine.substring(start, end) : "";
+    if (stringValue.length() > 0)
+    {
+      int value = stringValue.toInt();
+      Serial.print("Received new value:\t");
+      Serial.println(value);
+      return value;
+    }
+  }
+  // Serial.println("Could not parse received value, invalid request");
+  return -1;
+}
+
+void printWiFiStatus()
+{
   // print the SSID of the network you're attached to:
   Serial.print("SSID: ");
   Serial.println(WiFi.SSID());
